@@ -48,6 +48,7 @@ def remove_background_simple(input_path, output_path, threshold=200):
 def remove_background_ai(input_path, output_path):
     """
     AI智能抠图（使用rembg），效果最好，适合复杂背景
+    包含 alpha 通道后处理：阈值锐化 + 边缘清理，消除半透明残留
     """
     try:
         from rembg import remove
@@ -56,11 +57,50 @@ def remove_background_ai(input_path, output_path):
         print('或使用基础模式: python process_images.py')
         sys.exit(1)
 
+    import numpy as np
+
     print(f'AI抠图中: {os.path.basename(input_path)} ...')
     input_img = Image.open(input_path)
     output_img = remove(input_img)
-    output_img.save(output_path, 'PNG')
+
+    # === Alpha 通道后处理 ===
+    arr = np.array(output_img.convert('RGBA'))
+    alpha = arr[:, :, 3].astype(np.float32)
+
+    # 统计处理前的 alpha 分布
+    semi_before = np.sum((alpha > 0) & (alpha < 255))
+
+    # 1. 阈值锐化：使用 sigmoid 曲线将半透明像素推向 0 或 255
+    #    alpha < 128 → 趋向 0（透明），alpha > 128 → 趋向 255（不透明）
+    #    sharpness 越大，过渡越陡峭
+    sharpness = 6.0
+    alpha_norm = alpha / 255.0  # 归一化到 0~1
+    alpha_sharp = 1.0 / (1.0 + np.exp(-sharpness * (alpha_norm - 0.5)))
+    alpha = (alpha_sharp * 255).astype(np.float32)
+
+    # 2. 二次清理：alpha < 30 的直接归零（去除微弱残留）
+    alpha[alpha < 30] = 0
+    # alpha > 200 的直接拉满（强化主体）
+    alpha[alpha > 200] = 255
+
+    # 3. 边缘羽化：对 alpha 在 1~254 之间的边缘像素做轻微高斯模糊，消除锯齿
+    alpha_uint8 = alpha.astype(np.uint8)
+    alpha_img = Image.fromarray(alpha_uint8, mode='L')
+    alpha_img = alpha_img.filter(ImageFilter.GaussianBlur(radius=0.8))
+    # 模糊后再次应用阈值，保持边缘干净但平滑
+    alpha_arr = np.array(alpha_img).astype(np.float32)
+    alpha_arr[alpha_arr < 50] = 0
+    alpha_arr[alpha_arr > 180] = 255
+    alpha_uint8 = alpha_arr.astype(np.uint8)
+
+    # 写回图片
+    arr[:, :, 3] = alpha_uint8
+    result = Image.fromarray(arr, mode='RGBA')
+    result.save(output_path, 'PNG')
+
+    semi_after = np.sum((alpha_uint8 > 0) & (alpha_uint8 < 255))
     print(f'处理完成: {output_path}')
+    print(f'  半透明像素: {semi_before} → {semi_after} (减少 {100*(semi_before-semi_after)/max(semi_before,1):.1f}%)')
 
 
 def crop_to_content(image_path, padding=10):

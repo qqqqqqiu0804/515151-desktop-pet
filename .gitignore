@@ -2,6 +2,18 @@ __pycache__/
 *.pyc
 *.pyo
 assets/_backup_old/
+assets/_backup_png/
 build/
 dist/
 *.spec
+
+# 临时分析脚本
+analyze_*.py
+compare_*.py
+crop_images.py
+finalize_images.py
+process_new_images.py
+process_rembg_gentle.py
+process_white_bg.py
+try_models.py
+visualize_*.py
