@@ -35,8 +35,13 @@ class PetWindow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
 
-        # 窗口尺寸
-        self.pet_size = QSize(120, 140)
+        # 窗口尺寸（base_size 为基准尺寸，size_scale 为缩放比例）
+        self.base_size = QSize(120, 140)
+        self.size_scale = 1.0
+        self.pet_size = QSize(
+            int(self.base_size.width() * self.size_scale),
+            int(self.base_size.height() * self.size_scale)
+        )
         self.resize(self.pet_size)
 
         # 宠物标签
@@ -154,6 +159,22 @@ class PetWindow(QWidget):
 
         tray_menu.addSeparator()
 
+        # 调整大小
+        menu_size = tray_menu.addMenu('调整大小')
+        for label, scale in self.SIZE_PRESETS:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked, s=scale: self.set_size_scale(s))
+            menu_size.addAction(act)
+        menu_size.addSeparator()
+        action_bigger = QAction('放大 (+10%)', self)
+        action_bigger.triggered.connect(lambda: self.adjust_size(0.1))
+        menu_size.addAction(action_bigger)
+        action_smaller = QAction('缩小 (-10%)', self)
+        action_smaller.triggered.connect(lambda: self.adjust_size(-0.1))
+        menu_size.addAction(action_smaller)
+
+        tray_menu.addSeparator()
+
         # 退出
         action_quit = QAction('退出', self)
         action_quit.triggered.connect(self.quit_app)
@@ -193,6 +214,44 @@ class PetWindow(QWidget):
             self.current_image = self.image_sit
         elif mode == 'lie':
             self.current_image = self.image_lie
+        self.update_pet_display()
+
+    # ========== 大小调节 ==========
+    SIZE_PRESETS = [
+        ('迷你 (50%)', 0.5),
+        ('小 (70%)', 0.7),
+        ('中 (100%)', 1.0),
+        ('大 (130%)', 1.3),
+        ('特大 (160%)', 1.6),
+        ('巨无霸 (200%)', 2.0),
+    ]
+    MIN_SCALE = 0.3
+    MAX_SCALE = 3.0
+
+    def set_size_scale(self, scale):
+        """直接设置缩放比例"""
+        self.size_scale = max(self.MIN_SCALE, min(self.MAX_SCALE, scale))
+        self.apply_size()
+
+    def adjust_size(self, delta):
+        """微调缩放比例（delta 为增量，如 +0.1 / -0.1）"""
+        self.set_size_scale(self.size_scale + delta)
+
+    def apply_size(self):
+        """应用当前缩放比例：更新窗口/标签尺寸并重新绘制"""
+        self.pet_size = QSize(
+            int(self.base_size.width() * self.size_scale),
+            int(self.base_size.height() * self.size_scale)
+        )
+        self.resize(self.pet_size)
+        self.pet_label.resize(self.pet_size)
+
+        # 确保放大后不超出屏幕边界
+        screen = QApplication.primaryScreen().geometry()
+        x = max(0, min(self.x(), screen.width() - self.pet_size.width()))
+        y = max(0, min(self.y(), screen.height() - self.pet_size.height()))
+        self.move(x, y)
+
         self.update_pet_display()
 
     def update_pet_display(self):
@@ -323,6 +382,15 @@ class PetWindow(QWidget):
             self.is_dragging = False
             event.accept()
 
+    def wheelEvent(self, event):
+        """鼠标滚轮调节宠物大小（在宠物上滚动即可）"""
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.adjust_size(0.05)   # 向上滚 → 放大
+        else:
+            self.adjust_size(-0.05)  # 向下滚 → 缩小
+        event.accept()
+
     def mouseDoubleClickEvent(self, event):
         """双击触发跳跃"""
         if event.button() == Qt.LeftButton:
@@ -344,6 +412,20 @@ class PetWindow(QWidget):
         jump_action = QAction('跳一下', self)
         jump_action.triggered.connect(self.start_jump)
         menu.addAction(jump_action)
+
+        # 调整大小子菜单
+        size_menu = menu.addMenu('调整大小')
+        for label, scale in self.SIZE_PRESETS:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked, s=scale: self.set_size_scale(s))
+            size_menu.addAction(act)
+        size_menu.addSeparator()
+        bigger_act = QAction('放大 (+10%)', self)
+        bigger_act.triggered.connect(lambda: self.adjust_size(0.1))
+        size_menu.addAction(bigger_act)
+        smaller_act = QAction('缩小 (-10%)', self)
+        smaller_act.triggered.connect(lambda: self.adjust_size(-0.1))
+        size_menu.addAction(smaller_act)
 
         menu.addSeparator()
 

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+assets/_backup_old/
+build/
+dist/
+*.spec
